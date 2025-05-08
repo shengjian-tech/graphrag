@@ -395,6 +395,146 @@ async def local_search(
         full_response += chunk
     return full_response, context_data
 
+@validate_call(config={"arbitrary_types_allowed": True})
+async def local_search_async(
+        config: GraphRagConfig,
+        entities: pd.DataFrame,
+        communities: pd.DataFrame,
+        community_reports: pd.DataFrame,
+        text_units: pd.DataFrame,
+        relationships: pd.DataFrame,
+        covariates: pd.DataFrame | None,
+        community_level: int,
+        response_type: str,
+        query: str,
+        callbacks: list[QueryCallbacks] | None = None,
+) -> tuple[
+    str | dict[str, Any] | list[dict[str, Any]],
+    str | list[pd.DataFrame] | dict[str, pd.DataFrame],
+]:
+    """Perform a local search and return the context data and response.
+
+    ----------
+    - config (GraphRagConfig): A graphrag configuration (from settings.yaml)
+    - entities (pd.DataFrame): A DataFrame containing the final entities (from entities.parquet)
+    - community_reports (pd.DataFrame): A DataFrame containing the final community reports (from community_reports.parquet)
+    - text_units (pd.DataFrame): A DataFrame containing the final text units (from text_units.parquet)
+    - relationships (pd.DataFrame): A DataFrame containing the final relationships (from relationships.parquet)
+    - covariates (pd.DataFrame): A DataFrame containing the final covariates (from covariates.parquet)
+    - community_level (int): The community level to search at.
+    - response_type (str): The response type to return.
+    - query (str): The user query to search for.
+
+    Returns
+    -------
+    TODO: Document the search response type and format.
+
+    Raises
+    ------
+    TODO: Document any exceptions to expect.
+    """
+    callbacks = callbacks or []
+    full_response = ""
+    context_data = {}
+
+    def on_context(context: Any) -> None:
+        nonlocal context_data
+        context_data = context
+
+    local_callbacks = NoopQueryCallbacks()
+    local_callbacks.on_context = on_context
+    callbacks.append(local_callbacks)
+
+    async for chunk in local_search_streaming_async(
+            config=config,
+            entities=entities,
+            communities=communities,
+            community_reports=community_reports,
+            text_units=text_units,
+            relationships=relationships,
+            covariates=covariates,
+            community_level=community_level,
+            response_type=response_type,
+            query=query,
+            callbacks=callbacks,
+    ):
+        full_response += chunk
+    return full_response, context_data
+
+
+
+@validate_call(config={"arbitrary_types_allowed": True})
+async def local_search_streaming_async(
+    config: GraphRagConfig,
+    entities: pd.DataFrame,
+    communities: pd.DataFrame,
+    community_reports: pd.DataFrame,
+    text_units: pd.DataFrame,
+    relationships: pd.DataFrame,
+    covariates: pd.DataFrame | None,
+    community_level: int,
+    response_type: str,
+    query: str,
+    callbacks: list[QueryCallbacks] | None = None,
+) -> AsyncGenerator:
+    """Perform a local search and return the context data and response via a generator.
+
+    Parameters
+    ----------
+    - config (GraphRagConfig): A graphrag configuration (from settings.yaml)
+    - entities (pd.DataFrame): A DataFrame containing the final entities (from entities.parquet)
+    - community_reports (pd.DataFrame): A DataFrame containing the final community reports (from community_reports.parquet)
+    - text_units (pd.DataFrame): A DataFrame containing the final text units (from text_units.parquet)
+    - relationships (pd.DataFrame): A DataFrame containing the final relationships (from relationships.parquet)
+    - covariates (pd.DataFrame): A DataFrame containing the final covariates (from covariates.parquet)
+    - community_level (int): The community level to search at.
+    - response_type (str): The response type to return.
+    - query (str): The user query to search for.
+
+    Returns
+    -------
+    TODO: Document the search response type and format.
+
+    Raises
+    ------
+    TODO: Document any exceptions to expect.
+    """
+    vector_store_args = {}
+    for index, store in config.vector_store.items():
+        vector_store_args[index] = store.model_dump()
+    msg = f"Vector Store Args: {redact(vector_store_args)}"
+    logger.info(msg)
+
+    description_embedding_store = get_embedding_store(
+        config_args=vector_store_args,
+        embedding_name=entity_description_embedding,
+    )
+
+    entities_ = read_indexer_entities(entities, communities, community_level)
+    covariates_ = read_indexer_covariates(covariates) if covariates is not None else []
+    prompt = load_search_prompt(config.root_dir, config.local_search.prompt)
+
+    search_engine = get_local_search_engine(
+        config=config,
+        reports=read_indexer_reports(community_reports, communities, community_level),
+        text_units=read_indexer_text_units(text_units),
+        entities=entities_,
+        relationships=read_indexer_relationships(relationships),
+        covariates={"claims": covariates_},
+        description_embedding_store=description_embedding_store,
+        response_type=response_type,
+        system_prompt=prompt,
+        callbacks=callbacks,
+    )
+    context_result = search_engine.context_builder.build_context(
+        query=query,
+        conversation_history=None,
+        **search_engine.context_builder_params,
+    )
+
+    for chunk in context_result.context_chunks:
+        yield chunk
+
 
 @validate_call(config={"arbitrary_types_allowed": True})
 def local_search_streaming(
