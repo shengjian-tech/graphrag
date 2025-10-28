@@ -13,12 +13,6 @@ Given a text document that is potentially relevant to this activity and a list o
 - entity_type: One of the following types: [{entity_types}]
 - entity_description: Comprehensive description of the entity's attributes and activities
 Format each entity as ("entity"{{tuple_delimiter}}<entity_name>{{tuple_delimiter}}<entity_type>{{tuple_delimiter}}<entity_description>)
-严格遵循定义的结构生成响应，确保将每个实体输出为单个元组结构,元组必须严格用括号 () 包裹，且成对匹配,不要生成多余}}.
-正确示例:("entity"{{tuple_delimiter}}ORGANIZATION{{tuple_delimiter}}organization{{tuple_delimiter}}组织部门实体，用于管理用户和权限，通过角色部门关联表与角色绑定")
-错误示例（确保避免）:
-    括号不匹配,需要用括号 () 包裹内容变为了(}}包裹:("entity"{{tuple_delimiter}}ROLE{{tuple_delimiter}}role{{tuple_delimiter}}系统中的角色，用于定义用户权限和访问控制，通过外键关联到菜单和部门"}}
-    括号缺失,需要用括号 () 包裹内容变为了只有(,缺少):("entity"{{tuple_delimiter}}MENU{{tuple_delimiter}}menu{{tuple_delimiter}}系统中的菜单项，用于导航和功能访问，通过角色菜单中间表与角色关联"
-    多余}},需要用括号 () 包裹内容变为了(}})包裹:("entity"{{tuple_delimiter}}WECHAT_CONFIG{{tuple_delimiter}}organization{{tuple_delimiter}}微信配置信息表，用于存储微信相关系统配置参数的数据库表结构}})
 
 2. From the entities identified in step 1, identify all pairs of (source_entity, target_entity) that are *clearly related* to each other.
 For each pair of related entities, extract the following information:
@@ -27,13 +21,7 @@ For each pair of related entities, extract the following information:
 - relationship_description: explanation as to why you think the source entity and the target entity are related to each other
 - relationship_strength: an integer score between 1 to 10, indicating strength of the relationship between the source entity and target entity
 Format each relationship as ("relationship"{{tuple_delimiter}}<source_entity>{{tuple_delimiter}}<target_entity>{{tuple_delimiter}}<relationship_description>{{tuple_delimiter}}<relationship_strength>)
-严格遵循定义的结构生成响应，确保将每个关系输出为单个元组结构,元组必须严格用括号 () 包裹，且成对匹配,不要生成多余}}.
-正确示例:("relationship"{{tuple_delimiter}}ROLE{{tuple_delimiter}}MENU{{tuple_delimiter}}角色通过role_menu表拥有菜单访问权限{{tuple_delimiter}}8)
-错误示例(确保避免):
-    括号不匹配,需要用括号 () 包裹内容变为了(}}包裹:("relationship"{{tuple_delimiter}}ROLE{{tuple_delimiter}}ORGANIZATION{{tuple_delimiter}}角色通过role_org表被分配到特定部门{{tuple_delimiter}}8}}
-    括号缺失,需要用括号 () 包裹内容变为了只有(,缺少):("relationship"{{tuple_delimiter}}ROLE_MENU{{tuple_delimiter}}MENU{{tuple_delimiter}}role_menu表中的menuId字段引用菜单表的id{{tuple_delimiter}}9
-    多余}},需要用括号 () 包裹内容变为了(}})包裹:("relationship"{{tuple_delimiter}}WECHAT_CONFIG{{tuple_delimiter}}USER{{tuple_delimiter}}微信配置表可能包含用户权限配置信息{{tuple_delimiter}}3}})
-    
+
 3. Return output in {language} as a single list of all the entities and relationships identified in steps 1 and 2. Use {{record_delimiter}} as the list delimiter.
 
 4. If you have to translate into {language}, just translate the descriptions, nothing else!
