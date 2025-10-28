@@ -7,8 +7,6 @@ import logging
 import time
 from typing import Any, cast
 
-import tiktoken
-
 from graphrag.callbacks.llm_callbacks import BaseLLMCallback
 from graphrag.language_model.protocol.base import ChatModel
 from graphrag.prompts.query.question_gen_system_prompt import QUESTION_SYSTEM_PROMPT
@@ -19,10 +17,10 @@ from graphrag.query.context_builder.builders import (
 from graphrag.query.context_builder.conversation_history import (
     ConversationHistory,
 )
-from graphrag.query.llm.text_utils import num_tokens
 from graphrag.query.question_gen.base import BaseQuestionGen, QuestionResult
+from graphrag.tokenizer.tokenizer import Tokenizer
 
-log = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class LocalQuestionGen(BaseQuestionGen):
@@ -32,7 +30,7 @@ class LocalQuestionGen(BaseQuestionGen):
         self,
         model: ChatModel,
         context_builder: LocalContextBuilder,
-        token_encoder: tiktoken.Encoding | None = None,
+        tokenizer: Tokenizer | None = None,
         system_prompt: str = QUESTION_SYSTEM_PROMPT,
         callbacks: list[BaseLLMCallback] | None = None,
         model_params: dict[str, Any] | None = None,
@@ -41,7 +39,7 @@ class LocalQuestionGen(BaseQuestionGen):
         super().__init__(
             model=model,
             context_builder=context_builder,
-            token_encoder=token_encoder,
+            tokenizer=tokenizer,
             model_params=model_params,
             context_builder_params=context_builder_params,
         )
@@ -88,7 +86,9 @@ class LocalQuestionGen(BaseQuestionGen):
             context_records = result.context_records
         else:
             context_records = {"context_data": context_data}
-        log.info("GENERATE QUESTION: %s. LAST QUESTION: %s", start_time, question_text)
+        logger.debug(
+            "GENERATE QUESTION: %s. LAST QUESTION: %s", start_time, question_text
+        )
         system_prompt = ""
         try:
             system_prompt = self.system_prompt.format(
@@ -116,17 +116,17 @@ class LocalQuestionGen(BaseQuestionGen):
                 },
                 completion_time=time.time() - start_time,
                 llm_calls=1,
-                prompt_tokens=num_tokens(system_prompt, self.token_encoder),
+                prompt_tokens=self.tokenizer.num_tokens(system_prompt),
             )
 
         except Exception:
-            log.exception("Exception in generating question")
+            logger.exception("Exception in generating question")
             return QuestionResult(
                 response=[],
                 context_data=context_records,
                 completion_time=time.time() - start_time,
                 llm_calls=1,
-                prompt_tokens=num_tokens(system_prompt, self.token_encoder),
+                prompt_tokens=self.tokenizer.num_tokens(system_prompt),
             )
 
     async def generate(
@@ -168,7 +168,7 @@ class LocalQuestionGen(BaseQuestionGen):
             context_records = result.context_records
         else:
             context_records = {"context_data": context_data}
-        log.info(
+        logger.debug(
             "GENERATE QUESTION: %s. QUESTION HISTORY: %s", start_time, question_text
         )
         system_prompt = ""
@@ -199,15 +199,15 @@ class LocalQuestionGen(BaseQuestionGen):
                 },
                 completion_time=time.time() - start_time,
                 llm_calls=1,
-                prompt_tokens=num_tokens(system_prompt, self.token_encoder),
+                prompt_tokens=self.tokenizer.num_tokens(system_prompt),
             )
 
         except Exception:
-            log.exception("Exception in generating questions")
+            logger.exception("Exception in generating questions")
             return QuestionResult(
                 response=[],
                 context_data=context_records,
                 completion_time=time.time() - start_time,
                 llm_calls=1,
-                prompt_tokens=num_tokens(system_prompt, self.token_encoder),
+                prompt_tokens=self.tokenizer.num_tokens(system_prompt),
             )

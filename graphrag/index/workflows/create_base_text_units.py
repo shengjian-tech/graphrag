@@ -4,6 +4,7 @@
 """A module containing run_workflow method definition."""
 
 import json
+import logging
 from typing import Any, cast
 
 import pandas as pd
@@ -16,8 +17,9 @@ from graphrag.index.operations.chunk_text.strategies import get_encoding_fn
 from graphrag.index.typing.context import PipelineRunContext
 from graphrag.index.typing.workflow import WorkflowFunctionOutput
 from graphrag.index.utils.hashing import gen_sha512_hash
-from graphrag.logger.progress import Progress
 from graphrag.utils.storage import load_table_from_storage, write_table_to_storage
+
+logger = logging.getLogger(__name__)
 
 
 async def run_workflow(
@@ -25,7 +27,8 @@ async def run_workflow(
     context: PipelineRunContext,
 ) -> WorkflowFunctionOutput:
     """All the steps to transform base text_units."""
-    documents = await load_table_from_storage("documents", context.storage)
+    logger.info("Workflow started: create_base_text_units")
+    documents = await load_table_from_storage("documents", context.output_storage)
 
     chunks = config.chunks
 
@@ -41,8 +44,9 @@ async def run_workflow(
         chunk_size_includes_metadata=chunks.chunk_size_includes_metadata,
     )
 
-    await write_table_to_storage(output, "text_units", context.storage)
+    await write_table_to_storage(output, "text_units", context.output_storage)
 
+    logger.info("Workflow completed: create_base_text_units")
     return WorkflowFunctionOutput(result=output)
 
 
@@ -64,8 +68,6 @@ def create_base_text_units(
         zip(*[sort[col] for col in ["id", "text"]], strict=True)
     )
 
-    callbacks.progress(Progress(percent=0))
-
     agg_dict = {"text_with_ids": list}
     if "metadata" in documents:
         agg_dict["metadata"] = "first"  # type: ignore
@@ -81,7 +83,7 @@ def create_base_text_units(
     )
     aggregated.rename(columns={"text_with_ids": "texts"}, inplace=True)
 
-    def chunker(row: dict[str, Any]) -> Any:
+    def chunker(row: pd.Series) -> Any:
         line_delimiter = ".\n"
         metadata_str = ""
         metadata_tokens = 0
@@ -125,7 +127,19 @@ def create_base_text_units(
         row["chunks"] = chunked
         return row
 
-    aggregated = aggregated.apply(lambda row: chunker(row), axis=1)
+    # Track progress of row-wise apply operation
+    total_rows = len(aggregated)
+    logger.info("Starting chunking process for %d documents", total_rows)
+
+    def chunker_with_logging(row: pd.Series, row_index: int) -> Any:
+        """Add logging to chunker execution."""
+        result = chunker(row)
+        logger.info("chunker progress:  %d/%d", row_index + 1, total_rows)
+        return result
+
+    aggregated = aggregated.apply(
+        lambda row: chunker_with_logging(row, row.name), axis=1
+    )
 
     aggregated = cast("pd.DataFrame", aggregated[[*group_by_columns, "chunks"]])
     aggregated = aggregated.explode("chunks")

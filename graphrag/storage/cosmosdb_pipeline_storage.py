@@ -17,14 +17,13 @@ from azure.cosmos.exceptions import CosmosResourceNotFoundError
 from azure.cosmos.partition_key import PartitionKey
 from azure.identity import DefaultAzureCredential
 
-from graphrag.logger.base import ProgressLogger
 from graphrag.logger.progress import Progress
 from graphrag.storage.pipeline_storage import (
     PipelineStorage,
     get_timestamp_formatted_with_local_tz,
 )
 
-log = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class CosmosDBPipelineStorage(PipelineStorage):
@@ -40,15 +39,20 @@ class CosmosDBPipelineStorage(PipelineStorage):
     _encoding: str
     _no_id_prefixes: list[str]
 
-    def __init__(
-        self,
-        database_name: str,
-        container_name: str,
-        cosmosdb_account_url: str | None = None,
-        connection_string: str | None = None,
-        encoding: str = "utf-8",
-    ):
-        """Initialize the CosmosDB Storage."""
+    def __init__(self, **kwargs: Any) -> None:
+        """Create a CosmosDB storage instance."""
+        logger.info("Creating cosmosdb storage")
+        cosmosdb_account_url = kwargs.get("cosmosdb_account_url")
+        connection_string = kwargs.get("connection_string")
+        database_name = kwargs["base_dir"]
+        container_name = kwargs["container_name"]
+        if not database_name:
+            msg = "No base_dir provided for database name"
+            raise ValueError(msg)
+        if connection_string is None and cosmosdb_account_url is None:
+            msg = "connection_string or cosmosdb_account_url is required."
+            raise ValueError(msg)
+
         if connection_string:
             self._cosmos_client = CosmosClient.from_connection_string(connection_string)
         else:
@@ -61,7 +65,7 @@ class CosmosDBPipelineStorage(PipelineStorage):
                 url=cosmosdb_account_url,
                 credential=DefaultAzureCredential(),
             )
-        self._encoding = encoding
+        self._encoding = kwargs.get("encoding", "utf-8")
         self._database_name = database_name
         self._connection_string = connection_string
         self._cosmosdb_account_url = cosmosdb_account_url
@@ -72,7 +76,7 @@ class CosmosDBPipelineStorage(PipelineStorage):
             else None
         )
         self._no_id_prefixes = []
-        log.info(
+        logger.debug(
             "creating cosmosdb storage with account: %s and database: %s and container: %s",
             self._cosmosdb_account_name,
             self._database_name,
@@ -117,7 +121,6 @@ class CosmosDBPipelineStorage(PipelineStorage):
         self,
         file_pattern: re.Pattern[str],
         base_dir: str | None = None,
-        progress: ProgressLogger | None = None,
         file_filter: dict[str, Any] | None = None,
         max_count=-1,
     ) -> Iterator[tuple[str, dict[str, Any]]]:
@@ -134,7 +137,7 @@ class CosmosDBPipelineStorage(PipelineStorage):
             An iterator of document IDs and their corresponding regex matches.
         """
         base_dir = base_dir or ""
-        log.info(
+        logger.info(
             "search container %s for documents matching %s",
             self._container_name,
             file_pattern.pattern,
@@ -184,12 +187,18 @@ class CosmosDBPipelineStorage(PipelineStorage):
                         num_filtered += 1
                 else:
                     num_filtered += 1
-                if progress is not None:
-                    progress(
-                        _create_progress_status(num_loaded, num_filtered, num_total)
-                    )
-        except Exception:
-            log.exception(
+
+                progress_status = _create_progress_status(
+                    num_loaded, num_filtered, num_total
+                )
+                logger.debug(
+                    "Progress: %s (%d/%d completed)",
+                    progress_status.description,
+                    progress_status.completed_items,
+                    progress_status.total_items,
+                )
+        except Exception:  # noqa: BLE001
+            logger.warning(
                 "An error occurred while searching for documents in Cosmos DB."
             )
 
@@ -225,8 +234,8 @@ class CosmosDBPipelineStorage(PipelineStorage):
             item = self._container_client.read_item(item=key, partition_key=key)
             item_body = item.get("body")
             return json.dumps(item_body)
-        except Exception:
-            log.exception("Error reading item %s", key)
+        except Exception:  # noqa: BLE001
+            logger.warning("Error reading item %s", key)
             return None
 
     async def set(self, key: str, value: Any, encoding: str | None = None) -> None:
@@ -246,7 +255,7 @@ class CosmosDBPipelineStorage(PipelineStorage):
                     orient="records", lines=False, force_ascii=False
                 )
                 if value_json is None:
-                    log.exception("Error converting output %s to json", key)
+                    logger.error("Error converting output %s to json", key)
                 else:
                     cosmosdb_item_list = json.loads(value_json)
                     for index, cosmosdb_item in enumerate(cosmosdb_item_list):
@@ -267,7 +276,7 @@ class CosmosDBPipelineStorage(PipelineStorage):
                 }
                 self._container_client.upsert_item(body=cosmosdb_item)
         except Exception:
-            log.exception("Error writing item %s", key)
+            logger.exception("Error writing item %s", key)
 
     async def has(self, key: str) -> bool:
         """Check if the contents of the given filename key exist in the cosmosdb storage."""
@@ -306,7 +315,7 @@ class CosmosDBPipelineStorage(PipelineStorage):
         except CosmosResourceNotFoundError:
             return
         except Exception:
-            log.exception("Error deleting item %s", key)
+            logger.exception("Error deleting item %s", key)
 
     async def clear(self) -> None:
         """Clear all contents from storage.
@@ -339,32 +348,9 @@ class CosmosDBPipelineStorage(PipelineStorage):
                 datetime.fromtimestamp(item["_ts"], tz=timezone.utc)
             )
 
-        except Exception:
-            log.exception("Error getting key %s", key)
+        except Exception:  # noqa: BLE001
+            logger.warning("Error getting key %s", key)
             return ""
-
-
-# TODO remove this helper function and have the factory instantiate the class directly
-# once the new config system is in place and will enforce the correct types/existence of certain fields
-def create_cosmosdb_storage(**kwargs: Any) -> PipelineStorage:
-    """Create a CosmosDB storage instance."""
-    log.info("Creating cosmosdb storage")
-    cosmosdb_account_url = kwargs.get("cosmosdb_account_url")
-    connection_string = kwargs.get("connection_string")
-    base_dir = kwargs["base_dir"]
-    container_name = kwargs["container_name"]
-    if not base_dir:
-        msg = "No base_dir provided for database name"
-        raise ValueError(msg)
-    if connection_string is None and cosmosdb_account_url is None:
-        msg = "connection_string or cosmosdb_account_url is required."
-        raise ValueError(msg)
-    return CosmosDBPipelineStorage(
-        cosmosdb_account_url=cosmosdb_account_url,
-        connection_string=connection_string,
-        database_name=base_dir,
-        container_name=container_name,
-    )
 
 
 def _create_progress_status(

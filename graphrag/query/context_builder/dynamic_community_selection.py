@@ -10,15 +10,14 @@ from copy import deepcopy
 from time import time
 from typing import Any
 
-import tiktoken
-
 from graphrag.data_model.community import Community
 from graphrag.data_model.community_report import CommunityReport
 from graphrag.language_model.protocol.base import ChatModel
 from graphrag.query.context_builder.rate_prompt import RATE_QUERY
 from graphrag.query.context_builder.rate_relevancy import rate_relevancy
+from graphrag.tokenizer.tokenizer import Tokenizer
 
-log = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class DynamicCommunitySelection:
@@ -32,7 +31,7 @@ class DynamicCommunitySelection:
         community_reports: list[CommunityReport],
         communities: list[Community],
         model: ChatModel,
-        token_encoder: tiktoken.Encoding,
+        tokenizer: Tokenizer,
         rate_query: str = RATE_QUERY,
         use_summary: bool = False,
         threshold: int = 1,
@@ -43,7 +42,7 @@ class DynamicCommunitySelection:
         model_params: dict[str, Any] | None = None,
     ):
         self.model = model
-        self.token_encoder = token_encoder
+        self.tokenizer = tokenizer
         self.rate_query = rate_query
         self.num_repeats = num_repeats
         self.use_summary = use_summary
@@ -97,7 +96,7 @@ class DynamicCommunitySelection:
                         else self.reports[community].full_content
                     ),
                     model=self.model,
-                    token_encoder=self.token_encoder,
+                    tokenizer=self.tokenizer,
                     rate_query=self.rate_query,
                     num_repeats=self.num_repeats,
                     semaphore=self.semaphore,
@@ -109,7 +108,7 @@ class DynamicCommunitySelection:
             communities_to_rate = []
             for community, result in zip(queue, gather_results, strict=True):
                 rating = result["rating"]
-                log.debug(
+                logger.debug(
                     "dynamic community selection: community %s rating %s",
                     community,
                     rating,
@@ -127,7 +126,7 @@ class DynamicCommunitySelection:
                             if child in self.reports:
                                 communities_to_rate.append(child)
                             else:
-                                log.debug(
+                                logger.debug(
                                     "dynamic community selection: cannot find community %s in reports",
                                     child,
                                 )
@@ -142,7 +141,7 @@ class DynamicCommunitySelection:
                 and (str(level) in self.levels)
                 and (level <= self.max_level)
             ):
-                log.info(
+                logger.debug(
                     "dynamic community selection: no relevant community "
                     "reports, adding all reports at level %s to rate.",
                     level,
@@ -155,7 +154,7 @@ class DynamicCommunitySelection:
         ]
         end = time()
 
-        log.info(
+        logger.debug(
             "dynamic community selection (took: %ss)\n"
             "\trating distribution %s\n"
             "\t%s out of %s community reports are relevant\n"

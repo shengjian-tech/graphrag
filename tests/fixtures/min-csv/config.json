@@ -2,16 +2,23 @@
     "input_path": "./tests/fixtures/min-csv",
     "input_file_type": "text",
     "workflow_config": {
+        "load_input_documents": {
+            "max_runtime": 30
+        },
         "create_base_text_units": {
             "max_runtime": 30
+        },
+        "extract_covariates": 
+        {
+            "max_runtime": 10
         },
         "extract_graph": {
             "max_runtime": 500
         },
         "finalize_graph": {
             "row_range": [
-                1,
-                500
+                100,
+                750
             ],
             "nan_allowed_columns": [
                 "x",
@@ -26,7 +33,7 @@
         "create_communities": {
             "row_range": [
                 10,
-                30
+                80
             ],
             "max_runtime": 30,
             "expected_artifacts": ["communities.parquet"]
@@ -34,7 +41,7 @@
         "create_community_reports": {
             "row_range": [
                 10,
-                30
+                80
             ],
             "nan_allowed_columns": [
                 "title",

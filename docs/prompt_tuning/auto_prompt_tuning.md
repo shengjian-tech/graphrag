@@ -58,13 +58,13 @@ graphrag prompt-tune [--root ROOT] [--config CONFIG] [--domain DOMAIN]  [--selec
 ```bash
 python -m graphrag prompt-tune --root /path/to/project --config /path/to/settings.yaml --domain "environmental news" \
 --selection-method random --limit 10 --language English --max-tokens 2048 --chunk-size 256 --min-examples-required 3 \
---no-entity-types --output /path/to/output
+--no-discover-entity-types --output /path/to/output
 ```
 
 or, with minimal configuration (suggested):
 
 ```bash
-python -m graphrag prompt-tune --root /path/to/project --config /path/to/settings.yaml --no-entity-types
+python -m graphrag prompt-tune --root /path/to/project --config /path/to/settings.yaml --no-discover-entity-types
 ```
 
 ## Document Selection Methods
@@ -79,15 +79,7 @@ After that, it uses one of the following selection methods to pick a sample to w
 
 ## Modify Env Vars
 
-After running auto tuning, you should modify the following environment variables (or config variables) to pick up the new prompts on your index run. Note: Please make sure to update the correct path to the generated prompts, in this example we are using the default "prompts" path.
-
-- `GRAPHRAG_ENTITY_EXTRACTION_PROMPT_FILE` = "prompts/entity_extraction.txt"
-
-- `GRAPHRAG_COMMUNITY_REPORT_PROMPT_FILE` = "prompts/community_report.txt"
-
-- `GRAPHRAG_SUMMARIZE_DESCRIPTIONS_PROMPT_FILE` = "prompts/summarize_descriptions.txt"
-
-or in your yaml config file:
+After running auto tuning, you should modify the following config variables to pick up the new prompts on your index run. Note: Please make sure to update the correct path to the generated prompts, in this example we are using the default "prompts" path.
 
 ```yaml
 entity_extraction:

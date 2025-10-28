@@ -81,6 +81,7 @@ typer
 spacy
 kwargs
 ollama
+litellm
 
 # Library Methods
 iterrows
@@ -102,6 +103,9 @@ itertuples
 isin
 nocache
 nbconvert
+levelno
+acompletion
+aembedding
 
 # HTML
 nbsp
@@ -186,6 +190,7 @@ Verdantis's
 # English
 skippable
 upvote
+unconfigured
 
 # Misc
 Arxiv

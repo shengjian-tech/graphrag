@@ -3,6 +3,8 @@
 
 """A module containing run_workflow method definition."""
 
+import logging
+
 import pandas as pd
 
 import graphrag.data_model.schemas as schemas
@@ -11,6 +13,7 @@ from graphrag.callbacks.workflow_callbacks import WorkflowCallbacks
 from graphrag.config.defaults import graphrag_config_defaults
 from graphrag.config.enums import AsyncType
 from graphrag.config.models.graph_rag_config import GraphRagConfig
+from graphrag.config.models.language_model_config import LanguageModelConfig
 from graphrag.index.operations.finalize_community_reports import (
     finalize_community_reports,
 )
@@ -26,11 +29,14 @@ from graphrag.index.operations.summarize_communities.summarize_communities impor
 )
 from graphrag.index.typing.context import PipelineRunContext
 from graphrag.index.typing.workflow import WorkflowFunctionOutput
+from graphrag.tokenizer.get_tokenizer import get_tokenizer
 from graphrag.utils.storage import (
     load_table_from_storage,
     storage_has_table,
     write_table_to_storage,
 )
+
+logger = logging.getLogger(__name__)
 
 
 async def run_workflow(
@@ -38,14 +44,15 @@ async def run_workflow(
     context: PipelineRunContext,
 ) -> WorkflowFunctionOutput:
     """All the steps to transform community reports."""
-    edges = await load_table_from_storage("relationships", context.storage)
-    entities = await load_table_from_storage("entities", context.storage)
-    communities = await load_table_from_storage("communities", context.storage)
+    logger.info("Workflow started: create_community_reports")
+    edges = await load_table_from_storage("relationships", context.output_storage)
+    entities = await load_table_from_storage("entities", context.output_storage)
+    communities = await load_table_from_storage("communities", context.output_storage)
     claims = None
     if config.extract_claims.enabled and await storage_has_table(
-        "covariates", context.storage
+        "covariates", context.output_storage
     ):
-        claims = await load_table_from_storage("covariates", context.storage)
+        claims = await load_table_from_storage("covariates", context.output_storage)
 
     community_reports_llm_settings = config.get_language_model_config(
         config.community_reports.model_id
@@ -68,8 +75,9 @@ async def run_workflow(
         num_threads=num_threads,
     )
 
-    await write_table_to_storage(output, "community_reports", context.storage)
+    await write_table_to_storage(output, "community_reports", context.output_storage)
 
+    logger.info("Workflow completed: create_community_reports")
     return WorkflowFunctionOutput(result=output)
 
 
@@ -96,6 +104,9 @@ async def create_community_reports(
 
     summarization_strategy["extraction_prompt"] = summarization_strategy["graph_prompt"]
 
+    model_config = LanguageModelConfig(**summarization_strategy["llm"])
+    tokenizer = get_tokenizer(model_config)
+
     max_input_length = summarization_strategy.get(
         "max_input_length", graphrag_config_defaults.community_reports.max_input_length
     )
@@ -104,6 +115,7 @@ async def create_community_reports(
         nodes,
         edges,
         claims,
+        tokenizer,
         callbacks,
         max_input_length,
     )
@@ -116,6 +128,7 @@ async def create_community_reports(
         callbacks,
         cache,
         summarization_strategy,
+        tokenizer=tokenizer,
         max_input_length=max_input_length,
         async_mode=async_mode,
         num_threads=num_threads,

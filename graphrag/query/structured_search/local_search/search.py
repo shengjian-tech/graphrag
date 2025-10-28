@@ -8,8 +8,6 @@ import time
 from collections.abc import AsyncGenerator
 from typing import Any
 
-import tiktoken
-
 from graphrag.callbacks.query_callbacks import QueryCallbacks
 from graphrag.language_model.protocol.base import ChatModel
 from graphrag.prompts.query.local_search_system_prompt import (
@@ -19,10 +17,10 @@ from graphrag.query.context_builder.builders import LocalContextBuilder
 from graphrag.query.context_builder.conversation_history import (
     ConversationHistory,
 )
-from graphrag.query.llm.text_utils import num_tokens
 from graphrag.query.structured_search.base import BaseSearch, SearchResult
+from graphrag.tokenizer.tokenizer import Tokenizer
 
-log = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class LocalSearch(BaseSearch[LocalContextBuilder]):
@@ -32,7 +30,7 @@ class LocalSearch(BaseSearch[LocalContextBuilder]):
         self,
         model: ChatModel,
         context_builder: LocalContextBuilder,
-        token_encoder: tiktoken.Encoding | None = None,
+        tokenizer: Tokenizer | None = None,
         system_prompt: str | None = None,
         response_type: str = "multiple paragraphs",
         callbacks: list[QueryCallbacks] | None = None,
@@ -42,7 +40,7 @@ class LocalSearch(BaseSearch[LocalContextBuilder]):
         super().__init__(
             model=model,
             context_builder=context_builder,
-            token_encoder=token_encoder,
+            tokenizer=tokenizer,
             model_params=model_params,
             context_builder_params=context_builder_params or {},
         )
@@ -70,7 +68,7 @@ class LocalSearch(BaseSearch[LocalContextBuilder]):
         prompt_tokens["build_context"] = context_result.prompt_tokens
         output_tokens["build_context"] = context_result.output_tokens
 
-        log.info("GENERATE ANSWER: %s. QUERY: %s", start_time, query)
+        logger.debug("GENERATE ANSWER: %s. QUERY: %s", start_time, query)
         try:
             if "drift_query" in kwargs:
                 drift_query = kwargs["drift_query"]
@@ -100,8 +98,8 @@ class LocalSearch(BaseSearch[LocalContextBuilder]):
                     callback.on_llm_new_token(response)
 
             llm_calls["response"] = 1
-            prompt_tokens["response"] = num_tokens(search_prompt, self.token_encoder)
-            output_tokens["response"] = num_tokens(full_response, self.token_encoder)
+            prompt_tokens["response"] = len(self.tokenizer.encode(search_prompt))
+            output_tokens["response"] = len(self.tokenizer.encode(full_response))
 
             for callback in self.callbacks:
                 callback.on_context(context_result.context_records)
@@ -120,14 +118,14 @@ class LocalSearch(BaseSearch[LocalContextBuilder]):
             )
 
         except Exception:
-            log.exception("Exception in _asearch")
+            logger.exception("Exception in _asearch")
             return SearchResult(
                 response="",
                 context_data=context_result.context_records,
                 context_text=context_result.context_chunks,
                 completion_time=time.time() - start_time,
                 llm_calls=1,
-                prompt_tokens=num_tokens(search_prompt, self.token_encoder),
+                prompt_tokens=len(self.tokenizer.encode(search_prompt)),
                 output_tokens=0,
             )
 
@@ -144,7 +142,7 @@ class LocalSearch(BaseSearch[LocalContextBuilder]):
             conversation_history=conversation_history,
             **self.context_builder_params,
         )
-        log.info("GENERATE ANSWER: %s. QUERY: %s", start_time, query)
+        logger.debug("GENERATE ANSWER: %s. QUERY: %s", start_time, query)
         search_prompt = self.system_prompt.format(
             context_data=context_result.context_chunks, response_type=self.response_type
         )

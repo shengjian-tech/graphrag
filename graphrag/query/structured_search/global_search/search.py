@@ -12,7 +12,6 @@ from dataclasses import dataclass
 from typing import Any
 
 import pandas as pd
-import tiktoken
 
 from graphrag.callbacks.query_callbacks import QueryCallbacks
 from graphrag.language_model.protocol.base import ChatModel
@@ -30,10 +29,11 @@ from graphrag.query.context_builder.builders import GlobalContextBuilder
 from graphrag.query.context_builder.conversation_history import (
     ConversationHistory,
 )
-from graphrag.query.llm.text_utils import num_tokens, try_parse_json_object
+from graphrag.query.llm.text_utils import try_parse_json_object
 from graphrag.query.structured_search.base import BaseSearch, SearchResult
+from graphrag.tokenizer.tokenizer import Tokenizer
 
-log = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 @dataclass(kw_only=True)
@@ -52,7 +52,7 @@ class GlobalSearch(BaseSearch[GlobalContextBuilder]):
         self,
         model: ChatModel,
         context_builder: GlobalContextBuilder,
-        token_encoder: tiktoken.Encoding | None = None,
+        tokenizer: Tokenizer | None = None,
         map_system_prompt: str | None = None,
         reduce_system_prompt: str | None = None,
         response_type: str = "multiple paragraphs",
@@ -71,7 +71,7 @@ class GlobalSearch(BaseSearch[GlobalContextBuilder]):
         super().__init__(
             model=model,
             context_builder=context_builder,
-            token_encoder=token_encoder,
+            tokenizer=tokenizer,
             context_builder_params=context_builder_params,
         )
         self.map_system_prompt = map_system_prompt or MAP_SYSTEM_PROMPT
@@ -231,12 +231,12 @@ class GlobalSearch(BaseSearch[GlobalContextBuilder]):
                     json=True,
                 )
                 search_response = model_response.output.content
-                log.info("Map response: %s", search_response)
+                logger.debug("Map response: %s", search_response)
             try:
                 # parse search response json
                 processed_response = self._parse_search_response(search_response)
             except ValueError:
-                log.warning(
+                logger.warning(
                     "Warning: Error parsing search response json - skipping this batch"
                 )
                 processed_response = []
@@ -247,19 +247,19 @@ class GlobalSearch(BaseSearch[GlobalContextBuilder]):
                 context_text=context_data,
                 completion_time=time.time() - start_time,
                 llm_calls=1,
-                prompt_tokens=num_tokens(search_prompt, self.token_encoder),
-                output_tokens=num_tokens(search_response, self.token_encoder),
+                prompt_tokens=len(self.tokenizer.encode(search_prompt)),
+                output_tokens=len(self.tokenizer.encode(search_response)),
             )
 
         except Exception:
-            log.exception("Exception in _map_response_single_batch")
+            logger.exception("Exception in _map_response_single_batch")
             return SearchResult(
                 response=[{"answer": "", "score": 0}],
                 context_data=context_data,
                 context_text=context_data,
                 completion_time=time.time() - start_time,
                 llm_calls=1,
-                prompt_tokens=num_tokens(search_prompt, self.token_encoder),
+                prompt_tokens=len(self.tokenizer.encode(search_prompt)),
                 output_tokens=0,
             )
 
@@ -329,7 +329,7 @@ class GlobalSearch(BaseSearch[GlobalContextBuilder]):
 
             if len(filtered_key_points) == 0 and not self.allow_general_knowledge:
                 # return no data answer if no key points are found
-                log.warning(
+                logger.warning(
                     "Warning: All map responses have score 0 (i.e., no relevant information found from the dataset), returning a canned 'I do not know' answer. You can try enabling `allow_general_knowledge` to encourage the LLM to incorporate relevant general knowledge, at the risk of increasing hallucinations."
                 )
                 return SearchResult(
@@ -361,13 +361,12 @@ class GlobalSearch(BaseSearch[GlobalContextBuilder]):
                 formatted_response_data.append(point["answer"])  # type: ignore
                 formatted_response_text = "\n".join(formatted_response_data)
                 if (
-                    total_tokens
-                    + num_tokens(formatted_response_text, self.token_encoder)
+                    total_tokens + len(self.tokenizer.encode(formatted_response_text))
                     > self.max_data_tokens
                 ):
                     break
                 data.append(formatted_response_text)
-                total_tokens += num_tokens(formatted_response_text, self.token_encoder)
+                total_tokens += len(self.tokenizer.encode(formatted_response_text))
             text_data = "\n\n".join(data)
 
             search_prompt = self.reduce_system_prompt.format(
@@ -398,18 +397,18 @@ class GlobalSearch(BaseSearch[GlobalContextBuilder]):
                 context_text=text_data,
                 completion_time=time.time() - start_time,
                 llm_calls=1,
-                prompt_tokens=num_tokens(search_prompt, self.token_encoder),
-                output_tokens=num_tokens(search_response, self.token_encoder),
+                prompt_tokens=len(self.tokenizer.encode(search_prompt)),
+                output_tokens=len(self.tokenizer.encode(search_response)),
             )
         except Exception:
-            log.exception("Exception in reduce_response")
+            logger.exception("Exception in reduce_response")
             return SearchResult(
                 response="",
                 context_data=text_data,
                 context_text=text_data,
                 completion_time=time.time() - start_time,
                 llm_calls=1,
-                prompt_tokens=num_tokens(search_prompt, self.token_encoder),
+                prompt_tokens=len(self.tokenizer.encode(search_prompt)),
                 output_tokens=0,
             )
 
@@ -445,7 +444,7 @@ class GlobalSearch(BaseSearch[GlobalContextBuilder]):
 
         if len(filtered_key_points) == 0 and not self.allow_general_knowledge:
             # return no data answer if no key points are found
-            log.warning(
+            logger.warning(
                 "Warning: All map responses have score 0 (i.e., no relevant information found from the dataset), returning a canned 'I do not know' answer. You can try enabling `allow_general_knowledge` to encourage the LLM to incorporate relevant general knowledge, at the risk of increasing hallucinations."
             )
             yield NO_DATA_ANSWER
@@ -467,12 +466,12 @@ class GlobalSearch(BaseSearch[GlobalContextBuilder]):
             ]
             formatted_response_text = "\n".join(formatted_response_data)
             if (
-                total_tokens + num_tokens(formatted_response_text, self.token_encoder)
+                total_tokens + len(self.tokenizer.encode(formatted_response_text))
                 > self.max_data_tokens
             ):
                 break
             data.append(formatted_response_text)
-            total_tokens += num_tokens(formatted_response_text, self.token_encoder)
+            total_tokens += len(self.tokenizer.encode(formatted_response_text))
         text_data = "\n\n".join(data)
 
         search_prompt = self.reduce_system_prompt.format(

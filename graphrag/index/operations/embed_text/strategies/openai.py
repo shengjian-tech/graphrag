@@ -18,8 +18,9 @@ from graphrag.index.utils.is_null import is_null
 from graphrag.language_model.manager import ModelManager
 from graphrag.language_model.protocol.base import EmbeddingModel
 from graphrag.logger.progress import ProgressTicker, progress_ticker
+from graphrag.tokenizer.get_tokenizer import get_tokenizer
 
-log = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 async def run(
@@ -54,7 +55,7 @@ async def run(
         batch_max_tokens,
         splitter,
     )
-    log.info(
+    logger.info(
         "embedding %d inputs via %d snippets using %d batches. max_batch_size=%d, batch_max_tokens=%d",
         len(input),
         len(texts),
@@ -62,7 +63,11 @@ async def run(
         batch_size,
         batch_max_tokens,
     )
-    ticker = progress_ticker(callbacks.progress, len(text_batches))
+    ticker = progress_ticker(
+        callbacks.progress,
+        len(text_batches),
+        description="generate embeddings progress: ",
+    )
 
     # Embed each chunk of snippets
     embeddings = await _execute(model, text_batches, ticker, semaphore)
@@ -75,7 +80,7 @@ def _get_splitter(
     config: LanguageModelConfig, batch_max_tokens: int
 ) -> TokenTextSplitter:
     return TokenTextSplitter(
-        encoding_name=config.encoding_model,
+        tokenizer=get_tokenizer(model_config=config),
         chunk_size=batch_max_tokens,
     )
 

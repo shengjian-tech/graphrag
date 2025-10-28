@@ -1,6 +1,40 @@
 # Changelog
 Note: version releases in the 0.x.y range may introduce breaking changes.
 
+## 2.7.0
+
+- minor: Set LiteLLM as default in init_content.
+- patch: Fix Azure auth scope issue with LiteLLM.
+- patch: Housekeeping toward 2.7.
+
+## 2.6.0
+
+- minor: Add LiteLLM chat and embedding model providers.
+- minor: Add LoggerFactory and clean up related API.
+- minor: Add config for NLP async mode.
+- minor: Add optional input documents to indexing API.
+- minor: add customization to vector store
+- patch: Add gpt-5 support by updating fnllm dependency.
+- patch: Fix all human_readable_id fields to be 0-based.
+- patch: Fix multi-index search.
+- patch: Improve upon recent logging refactor
+- patch: Make cache, storage, and vector_store factories consistent with similar registration support
+- patch: Remove hard-coded community rate limiter.
+- patch: generate_text_embeddings only loads tables if embedding field is specified.
+
+## 2.5.0
+
+- minor: Add additional context variable to build index signature for custom parameter bag
+- minor: swap package management from Poetry -> UV
+
+## 2.4.0
+
+- minor: Allow injection of custom pipelines.
+- minor: Refactored StorageFactory to use a registration-based approach
+- patch: Fix default values for tpm and rpm limiters on embeddings
+- patch: Update typer.
+- patch: cleaned up logging to follow python standards.
+
 ## 2.3.0
 
 - minor: Remove Dynamic Max Retries support. Refactor typer typing in cli interface

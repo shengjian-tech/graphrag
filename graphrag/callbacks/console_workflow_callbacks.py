@@ -4,29 +4,43 @@
 """A logger that emits updates from the indexing engine to the console."""
 
 from graphrag.callbacks.noop_workflow_callbacks import NoopWorkflowCallbacks
+from graphrag.index.typing.pipeline_run_result import PipelineRunResult
+from graphrag.logger.progress import Progress
+
+# ruff: noqa: T201
 
 
 class ConsoleWorkflowCallbacks(NoopWorkflowCallbacks):
     """A logger that writes to a console."""
 
-    def error(
-        self,
-        message: str,
-        cause: BaseException | None = None,
-        stack: str | None = None,
-        details: dict | None = None,
-    ):
-        """Handle when an error occurs."""
-        print(message, str(cause), stack, details)  # noqa T201
+    _verbose = False
 
-    def warning(self, message: str, details: dict | None = None):
-        """Handle when a warning occurs."""
-        _print_warning(message)
+    def __init__(self, verbose=False):
+        self._verbose = verbose
 
-    def log(self, message: str, details: dict | None = None):
-        """Handle when a log message is produced."""
-        print(message, details)  # noqa T201
+    def pipeline_start(self, names: list[str]) -> None:
+        """Execute this callback to signal when the entire pipeline starts."""
+        print("Starting pipeline with workflows:", ", ".join(names))
 
+    def pipeline_end(self, results: list[PipelineRunResult]) -> None:
+        """Execute this callback to signal when the entire pipeline ends."""
+        print("Pipeline complete")
 
-def _print_warning(skk):
-    print("\033[93m {}\033[00m".format(skk))  # noqa T201
+    def workflow_start(self, name: str, instance: object) -> None:
+        """Execute this callback when a workflow starts."""
+        print(f"Starting workflow: {name}")
+
+    def workflow_end(self, name: str, instance: object) -> None:
+        """Execute this callback when a workflow ends."""
+        print("")  # account for potential return on prior progress
+        print(f"Workflow complete: {name}")
+        if self._verbose:
+            print(instance)
+
+    def progress(self, progress: Progress) -> None:
+        """Handle when progress occurs."""
+        complete = progress.completed_items or 0
+        total = progress.total_items or 1
+        percent = round((complete / total) * 100)
+        start = f"  {complete} / {total} "
+        print(f"{start:{'.'}<{percent}}", flush=True, end="\r")

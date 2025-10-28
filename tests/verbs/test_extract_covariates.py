@@ -37,6 +37,7 @@ async def test_extract_covariates():
     ).model_dump()
     llm_settings["type"] = ModelType.MockChat
     llm_settings["responses"] = MOCK_LLM_RESPONSES
+    config.extract_claims.enabled = True
     config.extract_claims.strategy = {
         "type": "graph_intelligence",
         "llm": llm_settings,
@@ -45,7 +46,7 @@ async def test_extract_covariates():
 
     await run_workflow(config, context)
 
-    actual = await load_table_from_storage("covariates", context.storage)
+    actual = await load_table_from_storage("covariates", context.output_storage)
 
     for column in COVARIATES_FINAL_COLUMNS:
         assert column in actual.columns
@@ -57,8 +58,8 @@ async def test_extract_covariates():
     assert_series_equal(actual["text_unit_id"], input["id"], check_names=False)
 
     # make sure the human ids are incrementing
-    assert actual["human_readable_id"][0] == 1
-    assert actual["human_readable_id"][1] == 2
+    assert actual["human_readable_id"][0] == 0
+    assert actual["human_readable_id"][1] == 1
 
     # check that the mock data is parsed and inserted into the correct columns
     assert actual["covariate_type"][0] == "claim"

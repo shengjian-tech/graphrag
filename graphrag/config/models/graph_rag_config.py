@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field, model_validator
 
 import graphrag.config.defaults as defs
 from graphrag.config.defaults import graphrag_config_defaults
+from graphrag.config.enums import VectorStoreType
 from graphrag.config.errors import LanguageModelConfigMissingError
 from graphrag.config.models.basic_search_config import BasicSearchConfig
 from graphrag.config.models.cache_config import CacheConfig
@@ -26,17 +27,22 @@ from graphrag.config.models.global_search_config import GlobalSearchConfig
 from graphrag.config.models.input_config import InputConfig
 from graphrag.config.models.language_model_config import LanguageModelConfig
 from graphrag.config.models.local_search_config import LocalSearchConfig
-from graphrag.config.models.output_config import OutputConfig
 from graphrag.config.models.prune_graph_config import PruneGraphConfig
 from graphrag.config.models.reporting_config import ReportingConfig
 from graphrag.config.models.snapshots_config import SnapshotsConfig
+from graphrag.config.models.storage_config import StorageConfig
 from graphrag.config.models.summarize_descriptions_config import (
     SummarizeDescriptionsConfig,
 )
 from graphrag.config.models.text_embedding_config import TextEmbeddingConfig
 from graphrag.config.models.umap_config import UmapConfig
 from graphrag.config.models.vector_store_config import VectorStoreConfig
-from graphrag.vector_stores.factory import VectorStoreType
+from graphrag.language_model.providers.litellm.services.rate_limiter.rate_limiter_factory import (
+    RateLimiterFactory,
+)
+from graphrag.language_model.providers.litellm.services.retry.retry_factory import (
+    RetryFactory,
+)
 
 
 class GraphRagConfig(BaseModel):
@@ -89,6 +95,47 @@ class GraphRagConfig(BaseModel):
         if defs.DEFAULT_EMBEDDING_MODEL_ID not in self.models:
             raise LanguageModelConfigMissingError(defs.DEFAULT_EMBEDDING_MODEL_ID)
 
+    def _validate_retry_services(self) -> None:
+        """Validate the retry services configuration."""
+        retry_factory = RetryFactory()
+
+        for model_id, model in self.models.items():
+            if model.retry_strategy != "none":
+                if model.retry_strategy not in retry_factory:
+                    msg = f"Retry strategy '{model.retry_strategy}' for model '{model_id}' is not registered. Available strategies: {', '.join(retry_factory.keys())}"
+                    raise ValueError(msg)
+
+                _ = retry_factory.create(
+                    strategy=model.retry_strategy,
+                    max_retries=model.max_retries,
+                    max_retry_wait=model.max_retry_wait,
+                )
+
+    def _validate_rate_limiter_services(self) -> None:
+        """Validate the rate limiter services configuration."""
+        rate_limiter_factory = RateLimiterFactory()
+
+        for model_id, model in self.models.items():
+            if model.rate_limit_strategy is not None:
+                if model.rate_limit_strategy not in rate_limiter_factory:
+                    msg = f"Rate Limiter strategy '{model.rate_limit_strategy}' for model '{model_id}' is not registered. Available strategies: {', '.join(rate_limiter_factory.keys())}"
+                    raise ValueError(msg)
+
+                rpm = (
+                    model.requests_per_minute
+                    if type(model.requests_per_minute) is int
+                    else None
+                )
+                tpm = (
+                    model.tokens_per_minute
+                    if type(model.tokens_per_minute) is int
+                    else None
+                )
+                if rpm is not None or tpm is not None:
+                    _ = rate_limiter_factory.create(
+                        strategy=model.rate_limit_strategy, rpm=rpm, tpm=tpm
+                    )
+
     input: InputConfig = Field(
         description="The input configuration.", default=InputConfig()
     )
@@ -102,21 +149,31 @@ class GraphRagConfig(BaseModel):
             else:
                 self.input.file_pattern = f".*\\.{self.input.file_type.value}$"
 
+    def _validate_input_base_dir(self) -> None:
+        """Validate the input base directory."""
+        if self.input.storage.type == defs.StorageType.file:
+            if self.input.storage.base_dir.strip() == "":
+                msg = "input storage base directory is required for file input storage. Please rerun `graphrag init` and set the input storage configuration."
+                raise ValueError(msg)
+            self.input.storage.base_dir = str(
+                (Path(self.root_dir) / self.input.storage.base_dir).resolve()
+            )
+
     chunks: ChunkingConfig = Field(
         description="The chunking configuration to use.",
         default=ChunkingConfig(),
     )
     """The chunking configuration to use."""
 
-    output: OutputConfig = Field(
+    output: StorageConfig = Field(
         description="The output configuration.",
-        default=OutputConfig(),
+        default=StorageConfig(),
     )
     """The output configuration."""
 
     def _validate_output_base_dir(self) -> None:
         """Validate the output base directory."""
-        if self.output.type == defs.OutputType.file:
+        if self.output.type == defs.StorageType.file:
             if self.output.base_dir.strip() == "":
                 msg = "output base directory is required for file output. Please rerun `graphrag init` and set the output configuration."
                 raise ValueError(msg)
@@ -124,7 +181,7 @@ class GraphRagConfig(BaseModel):
                 (Path(self.root_dir) / self.output.base_dir).resolve()
             )
 
-    outputs: dict[str, OutputConfig] | None = Field(
+    outputs: dict[str, StorageConfig] | None = Field(
         description="A list of output configurations used for multi-index query.",
         default=graphrag_config_defaults.outputs,
     )
@@ -133,7 +190,7 @@ class GraphRagConfig(BaseModel):
         """Validate the outputs dict base directories."""
         if self.outputs:
             for output in self.outputs.values():
-                if output.type == defs.OutputType.file:
+                if output.type == defs.StorageType.file:
                     if output.base_dir.strip() == "":
                         msg = "Output base directory is required for file output. Please rerun `graphrag init` and set the output configuration."
                         raise ValueError(msg)
@@ -141,10 +198,9 @@ class GraphRagConfig(BaseModel):
                         (Path(self.root_dir) / output.base_dir).resolve()
                     )
 
-    update_index_output: OutputConfig = Field(
+    update_index_output: StorageConfig = Field(
         description="The output configuration for the updated index.",
-        default=OutputConfig(
-            type=graphrag_config_defaults.update_index_output.type,
+        default=StorageConfig(
             base_dir=graphrag_config_defaults.update_index_output.base_dir,
         ),
     )
@@ -152,7 +208,7 @@ class GraphRagConfig(BaseModel):
 
     def _validate_update_index_output_base_dir(self) -> None:
         """Validate the update index output base directory."""
-        if self.update_index_output.type == defs.OutputType.file:
+        if self.update_index_output.type == defs.StorageType.file:
             if self.update_index_output.base_dir.strip() == "":
                 msg = "update_index_output base directory is required for file output. Please rerun `graphrag init` and set the update_index_output configuration."
                 raise ValueError(msg)
@@ -291,6 +347,11 @@ class GraphRagConfig(BaseModel):
                     raise ValueError(msg)
                 store.db_uri = str((Path(self.root_dir) / store.db_uri).resolve())
 
+    def _validate_factories(self) -> None:
+        """Validate the factories used in the configuration."""
+        self._validate_retry_services()
+        self._validate_rate_limiter_services()
+
     def get_language_model_config(self, model_id: str) -> LanguageModelConfig:
         """Get a model configuration by ID.
 
@@ -345,9 +406,11 @@ class GraphRagConfig(BaseModel):
         self._validate_root_dir()
         self._validate_models()
         self._validate_input_pattern()
+        self._validate_input_base_dir()
         self._validate_reporting_base_dir()
         self._validate_output_base_dir()
         self._validate_multi_output_base_dirs()
         self._validate_update_index_output_base_dir()
         self._validate_vector_store_db_uri()
+        self._validate_factories()
         return self

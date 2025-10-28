@@ -20,7 +20,7 @@ from graphrag.query.context_builder.community_context import (
 )
 from graphrag.storage.blob_pipeline_storage import BlobPipelineStorage
 
-log = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 debug = os.environ.get("DEBUG") is not None
 gh_pages = os.environ.get("GH_PAGES") is not None
@@ -130,23 +130,19 @@ class TestIndexer:
         input_file_type: str,
     ):
         command = [
-            "poetry",
+            "uv",
             "run",
             "poe",
             "index",
             "--verbose" if debug else None,
             "--root",
             root.resolve().as_posix(),
-            "--logger",
-            "print",
             "--method",
             "standard",
         ]
         command = [arg for arg in command if arg]
-        log.info("running command ", " ".join(command))
-        completion = subprocess.run(
-            command, env={**os.environ, "GRAPHRAG_INPUT_FILE_TYPE": input_file_type}
-        )
+        logger.info("running command ", " ".join(command))
+        completion = subprocess.run(command, env=os.environ)
         assert completion.returncode == 0, (
             f"Indexer failed with return code: {completion.returncode}"
         )
@@ -204,7 +200,7 @@ class TestIndexer:
 
     def __run_query(self, root: Path, query_config: dict[str, str]):
         command = [
-            "poetry",
+            "uv",
             "run",
             "poe",
             "query",
@@ -218,7 +214,7 @@ class TestIndexer:
             query_config["query"],
         ]
 
-        log.info("running command ", " ".join(command))
+        logger.info("running command ", " ".join(command))
         return subprocess.run(command, capture_output=True, text=True)
 
     @cleanup(skip=debug)
@@ -226,18 +222,14 @@ class TestIndexer:
         os.environ,
         {
             **os.environ,
-            "BLOB_STORAGE_CONNECTION_STRING": os.getenv(
-                "GRAPHRAG_CACHE_CONNECTION_STRING", WELL_KNOWN_AZURITE_CONNECTION_STRING
-            ),
+            "BLOB_STORAGE_CONNECTION_STRING": WELL_KNOWN_AZURITE_CONNECTION_STRING,
             "LOCAL_BLOB_STORAGE_CONNECTION_STRING": WELL_KNOWN_AZURITE_CONNECTION_STRING,
-            "GRAPHRAG_CHUNK_SIZE": "1200",
-            "GRAPHRAG_CHUNK_OVERLAP": "0",
             "AZURE_AI_SEARCH_URL_ENDPOINT": os.getenv("AZURE_AI_SEARCH_URL_ENDPOINT"),
             "AZURE_AI_SEARCH_API_KEY": os.getenv("AZURE_AI_SEARCH_API_KEY"),
         },
         clear=True,
     )
-    @pytest.mark.timeout(800)
+    @pytest.mark.timeout(2000)
     def test_fixture(
         self,
         input_path: str,

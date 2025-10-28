@@ -12,14 +12,13 @@ import graphrag.api as api
 from graphrag.callbacks.noop_query_callbacks import NoopQueryCallbacks
 from graphrag.config.load_config import load_config
 from graphrag.config.models.graph_rag_config import GraphRagConfig
-from graphrag.logger.print_progress import PrintProgressLogger
 from graphrag.utils.api import create_storage_from_config
 from graphrag.utils.storage import load_table_from_storage, storage_has_table
 
 if TYPE_CHECKING:
     import pandas as pd
 
-logger = PrintProgressLogger("")
+# ruff: noqa: T201
 
 
 def run_global_search(
@@ -31,6 +30,7 @@ def run_global_search(
     response_type: str,
     streaming: bool,
     query: str,
+    verbose: bool,
 ):
     """Perform a global search with a given query.
 
@@ -59,10 +59,6 @@ def run_global_search(
         final_community_reports_list = dataframe_dict["community_reports"]
         index_names = dataframe_dict["index_names"]
 
-        logger.success(
-            f"Running Multi-index Global Search: {dataframe_dict['index_names']}"
-        )
-
         response, context_data = asyncio.run(
             api.multi_index_global_search(
                 config=config,
@@ -75,11 +71,10 @@ def run_global_search(
                 response_type=response_type,
                 streaming=streaming,
                 query=query,
+                verbose=verbose,
             )
         )
-        logger.success(f"Global Search Response:\n{response}")
-        # NOTE: we return the response and context data here purely as a complete demonstration of the API.
-        # External users should use the API directly to get the response and context data.
+        print(response)
         return response, context_data
 
     # Otherwise, call the Single-Index Global Search API
@@ -110,11 +105,12 @@ def run_global_search(
                 response_type=response_type,
                 query=query,
                 callbacks=[callbacks],
+                verbose=verbose,
             ):
                 full_response += stream_chunk
-                print(stream_chunk, end="")  # noqa: T201
-                sys.stdout.flush()  # flush output buffer to display text immediately
-            print()  # noqa: T201
+                print(stream_chunk, end="")
+                sys.stdout.flush()
+            print()
             return full_response, context_data
 
         return asyncio.run(run_streaming_search())
@@ -129,11 +125,11 @@ def run_global_search(
             dynamic_community_selection=dynamic_community_selection,
             response_type=response_type,
             query=query,
+            verbose=verbose,
         )
     )
-    logger.success(f"Global Search Response:\n{response}")
-    # NOTE: we return the response and context data here purely as a complete demonstration of the API.
-    # External users should use the API directly to get the response and context data.
+    print(response)
+
     return response, context_data
 
 
@@ -145,6 +141,7 @@ def run_local_search(
     response_type: str,
     streaming: bool,
     query: str,
+    verbose: bool,
 ):
     """Perform a local search with a given query.
 
@@ -178,10 +175,6 @@ def run_local_search(
         final_relationships_list = dataframe_dict["relationships"]
         index_names = dataframe_dict["index_names"]
 
-        logger.success(
-            f"Running Multi-index Local Search: {dataframe_dict['index_names']}"
-        )
-
         # If any covariates tables are missing from any index, set the covariates list to None
         if len(dataframe_dict["covariates"]) != dataframe_dict["num_indexes"]:
             final_covariates_list = None
@@ -202,11 +195,11 @@ def run_local_search(
                 response_type=response_type,
                 streaming=streaming,
                 query=query,
+                verbose=verbose,
             )
         )
-        logger.success(f"Local Search Response:\n{response}")
-        # NOTE: we return the response and context data here purely as a complete demonstration of the API.
-        # External users should use the API directly to get the response and context data.
+        print(response)
+
         return response, context_data
 
     # Otherwise, call the Single-Index Local Search API
@@ -242,11 +235,12 @@ def run_local_search(
                 response_type=response_type,
                 query=query,
                 callbacks=[callbacks],
+                verbose=verbose,
             ):
                 full_response += stream_chunk
-                print(stream_chunk, end="")  # noqa: T201
-                sys.stdout.flush()  # flush output buffer to display text immediately
-            print()  # noqa: T201
+                print(stream_chunk, end="")
+                sys.stdout.flush()
+            print()
             return full_response, context_data
 
         return asyncio.run(run_streaming_search())
@@ -263,11 +257,11 @@ def run_local_search(
             community_level=community_level,
             response_type=response_type,
             query=query,
+            verbose=verbose,
         )
     )
-    logger.success(f"Local Search Response:\n{response}")
-    # NOTE: we return the response and context data here purely as a complete demonstration of the API.
-    # External users should use the API directly to get the response and context data.
+    print(response)
+
     return response, context_data
 
 
@@ -279,6 +273,7 @@ def run_drift_search(
     response_type: str,
     streaming: bool,
     query: str,
+    verbose: bool,
 ):
     """Perform a local search with a given query.
 
@@ -310,10 +305,6 @@ def run_drift_search(
         final_relationships_list = dataframe_dict["relationships"]
         index_names = dataframe_dict["index_names"]
 
-        logger.success(
-            f"Running Multi-index Drift Search: {dataframe_dict['index_names']}"
-        )
-
         response, context_data = asyncio.run(
             api.multi_index_drift_search(
                 config=config,
@@ -327,11 +318,11 @@ def run_drift_search(
                 response_type=response_type,
                 streaming=streaming,
                 query=query,
+                verbose=verbose,
             )
         )
-        logger.success(f"DRIFT Search Response:\n{response}")
-        # NOTE: we return the response and context data here purely as a complete demonstration of the API.
-        # External users should use the API directly to get the response and context data.
+        print(response)
+
         return response, context_data
 
     # Otherwise, call the Single-Index Drift Search API
@@ -365,11 +356,12 @@ def run_drift_search(
                 response_type=response_type,
                 query=query,
                 callbacks=[callbacks],
+                verbose=verbose,
             ):
                 full_response += stream_chunk
-                print(stream_chunk, end="")  # noqa: T201
-                sys.stdout.flush()  # flush output buffer to display text immediately
-            print()  # noqa: T201
+                print(stream_chunk, end="")
+                sys.stdout.flush()
+            print()
             return full_response, context_data
 
         return asyncio.run(run_streaming_search())
@@ -386,11 +378,11 @@ def run_drift_search(
             community_level=community_level,
             response_type=response_type,
             query=query,
+            verbose=verbose,
         )
     )
-    logger.success(f"DRIFT Search Response:\n{response}")
-    # NOTE: we return the response and context data here purely as a complete demonstration of the API.
-    # External users should use the API directly to get the response and context data.
+    print(response)
+
     return response, context_data
 
 
@@ -400,6 +392,7 @@ def run_basic_search(
     root_dir: Path,
     streaming: bool,
     query: str,
+    verbose: bool,
 ):
     """Perform a basics search with a given query.
 
@@ -423,10 +416,6 @@ def run_basic_search(
         final_text_units_list = dataframe_dict["text_units"]
         index_names = dataframe_dict["index_names"]
 
-        logger.success(
-            f"Running Multi-index Basic Search: {dataframe_dict['index_names']}"
-        )
-
         response, context_data = asyncio.run(
             api.multi_index_basic_search(
                 config=config,
@@ -434,11 +423,11 @@ def run_basic_search(
                 index_names=index_names,
                 streaming=streaming,
                 query=query,
+                verbose=verbose,
             )
         )
-        logger.success(f"Basic Search Response:\n{response}")
-        # NOTE: we return the response and context data here purely as a complete demonstration of the API.
-        # External users should use the API directly to get the response and context data.
+        print(response)
+
         return response, context_data
 
     # Otherwise, call the Single-Index Basic Search API
@@ -461,11 +450,13 @@ def run_basic_search(
                 config=config,
                 text_units=final_text_units,
                 query=query,
+                callbacks=[callbacks],
+                verbose=verbose,
             ):
                 full_response += stream_chunk
-                print(stream_chunk, end="")  # noqa: T201
-                sys.stdout.flush()  # flush output buffer to display text immediately
-            print()  # noqa: T201
+                print(stream_chunk, end="")
+                sys.stdout.flush()
+            print()
             return full_response, context_data
 
         return asyncio.run(run_streaming_search())
@@ -475,11 +466,11 @@ def run_basic_search(
             config=config,
             text_units=final_text_units,
             query=query,
+            verbose=verbose,
         )
     )
-    logger.success(f"Basic Search Response:\n{response}")
-    # NOTE: we return the response and context data here purely as a complete demonstration of the API.
-    # External users should use the API directly to get the response and context data.
+    print(response)
+
     return response, context_data
 
 

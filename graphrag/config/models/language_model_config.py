@@ -3,6 +3,7 @@
 
 """Language model configuration."""
 
+import logging
 from typing import Literal
 
 import tiktoken
@@ -14,10 +15,11 @@ from graphrag.config.errors import (
     ApiKeyMissingError,
     AzureApiBaseMissingError,
     AzureApiVersionMissingError,
-    AzureDeploymentNameMissingError,
     ConflictingSettingsError,
 )
 from graphrag.language_model.factory import ModelFactory
+
+logger = logging.getLogger(__name__)
 
 
 class LanguageModelConfig(BaseModel):
@@ -73,8 +75,11 @@ class LanguageModelConfig(BaseModel):
         ConflictingSettingsError
             If the Azure authentication type conflicts with the model being used.
         """
-        if self.auth_type == AuthType.AzureManagedIdentity and (
-            self.type == ModelType.OpenAIChat or self.type == ModelType.OpenAIEmbedding
+        if (
+            self.auth_type == AuthType.AzureManagedIdentity
+            and self.type != ModelType.AzureOpenAIChat
+            and self.type != ModelType.AzureOpenAIEmbedding
+            and self.model_provider != "azure"  # indicates Litellm + AOI
         ):
             msg = f"auth_type of azure_managed_identity is not supported for model type {self.type}. Please rerun `graphrag init` and set the auth_type to api_key."
             raise ConflictingSettingsError(msg)
@@ -93,6 +98,35 @@ class LanguageModelConfig(BaseModel):
         if not ModelFactory.is_supported_model(self.type):
             msg = f"Model type {self.type} is not recognized, must be one of {ModelFactory.get_chat_models() + ModelFactory.get_embedding_models()}."
             raise KeyError(msg)
+        if self.type in [
+            "openai_chat",
+            "openai_embedding",
+            "azure_openai_chat",
+            "azure_openai_embedding",
+        ]:
+            msg = f"Model config based on fnllm is deprecated and will be removed in GraphRAG v3, please use {ModelType.Chat} or {ModelType.Embedding} instead to switch to LiteLLM config."
+            logger.warning(msg)
+
+    model_provider: str | None = Field(
+        description="The model provider to use.",
+        default=language_model_defaults.model_provider,
+    )
+
+    def _validate_model_provider(self) -> None:
+        """Validate the model provider.
+
+        Required when using Litellm.
+
+        Raises
+        ------
+        KeyError
+            If the model provider is not recognized.
+        """
+        if (self.type == ModelType.Chat or self.type == ModelType.Embedding) and (
+            self.model_provider is None or self.model_provider.strip() == ""
+        ):
+            msg = f"Model provider must be specified when using type == {self.type}."
+            raise KeyError(msg)
 
     model: str = Field(description="The LLM model to use.")
     encoding_model: str = Field(
@@ -103,12 +137,27 @@ class LanguageModelConfig(BaseModel):
     def _validate_encoding_model(self) -> None:
         """Validate the encoding model.
 
+        The default behavior is to use an encoding model that matches the LLM model.
+        LiteLLM supports 100+ models and their tokenization. There is no need to
+        set the encoding model when using the new LiteLLM provider as was done with fnllm provider.
+
+        Users can still manually specify a tiktoken based encoding model to use even with the LiteLLM provider
+        in which case the specified encoding model will be used regardless of the LLM model being used, even if
+        it is not an openai based model.
+
+        If not using LiteLLM provider, set the encoding model based on the LLM model name.
+        This is for backward compatibility with existing fnllm provider until fnllm is removed.
+
         Raises
         ------
         KeyError
             If the model name is not recognized.
         """
-        if self.encoding_model.strip() == "":
+        if (
+            self.type != ModelType.Chat
+            and self.type != ModelType.Embedding
+            and self.encoding_model.strip() == ""
+        ):
             self.encoding_model = tiktoken.encoding_name_for_model(self.model)
 
     api_base: str | None = Field(
@@ -129,6 +178,7 @@ class LanguageModelConfig(BaseModel):
         if (
             self.type == ModelType.AzureOpenAIChat
             or self.type == ModelType.AzureOpenAIEmbedding
+            or self.model_provider == "azure"  # indicates Litellm + AOI
         ) and (self.api_base is None or self.api_base.strip() == ""):
             raise AzureApiBaseMissingError(self.type)
 
@@ -150,6 +200,7 @@ class LanguageModelConfig(BaseModel):
         if (
             self.type == ModelType.AzureOpenAIChat
             or self.type == ModelType.AzureOpenAIEmbedding
+            or self.model_provider == "azure"  # indicates Litellm + AOI
         ) and (self.api_version is None or self.api_version.strip() == ""):
             raise AzureApiVersionMissingError(self.type)
 
@@ -171,8 +222,10 @@ class LanguageModelConfig(BaseModel):
         if (
             self.type == ModelType.AzureOpenAIChat
             or self.type == ModelType.AzureOpenAIEmbedding
+            or self.model_provider == "azure"  # indicates Litellm + AOI
         ) and (self.deployment_name is None or self.deployment_name.strip() == ""):
-            raise AzureDeploymentNameMissingError(self.type)
+            msg = f"deployment_name is not set for Azure-hosted model. This will default to your model name ({self.model}). If different, this should be set."
+            logger.debug(msg)
 
     organization: str | None = Field(
         description="The organization to use for the LLM service.",
@@ -212,6 +265,14 @@ class LanguageModelConfig(BaseModel):
             msg = f"Tokens per minute must be a non zero positive number, 'auto' or null. Suggested value: {language_model_defaults.tokens_per_minute}."
             raise ValueError(msg)
 
+        if (
+            (self.type == ModelType.Chat or self.type == ModelType.Embedding)
+            and self.rate_limit_strategy is not None
+            and self.tokens_per_minute == "auto"
+        ):
+            msg = f"tokens_per_minute cannot be set to 'auto' when using type '{self.type}'. Please set it to a positive integer or null to disable."
+            raise ValueError(msg)
+
     requests_per_minute: int | Literal["auto"] | None = Field(
         description="The number of requests per minute to use for the LLM service.",
         default=language_model_defaults.requests_per_minute,
@@ -229,6 +290,19 @@ class LanguageModelConfig(BaseModel):
         if isinstance(self.requests_per_minute, int) and self.requests_per_minute < 1:
             msg = f"Requests per minute must be a non zero positive number, 'auto' or null. Suggested value: {language_model_defaults.requests_per_minute}."
             raise ValueError(msg)
+
+        if (
+            (self.type == ModelType.Chat or self.type == ModelType.Embedding)
+            and self.rate_limit_strategy is not None
+            and self.requests_per_minute == "auto"
+        ):
+            msg = f"requests_per_minute cannot be set to 'auto' when using type '{self.type}'. Please set it to a positive integer or null to disable."
+            raise ValueError(msg)
+
+    rate_limit_strategy: str | None = Field(
+        description="The rate limit strategy to use for the LLM service.",
+        default=language_model_defaults.rate_limit_strategy,
+    )
 
     retry_strategy: str = Field(
         description="The retry strategy to use for the LLM service.",
@@ -318,6 +392,7 @@ class LanguageModelConfig(BaseModel):
     @model_validator(mode="after")
     def _validate_model(self):
         self._validate_type()
+        self._validate_model_provider()
         self._validate_auth_type()
         self._validate_api_key()
         self._validate_tokens_per_minute()
